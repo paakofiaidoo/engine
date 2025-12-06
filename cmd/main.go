@@ -16,9 +16,7 @@ import (
 	"juki-engine/pkg/system"
 	"juki-engine/pkg/watcher"
 
-	"github.com/danielgtaylor/huma/v2/humacli"
 	"github.com/labstack/echo/v4"
-	"github.com/labstack/echo/v4/middleware"
 )
 
 type Options struct {
