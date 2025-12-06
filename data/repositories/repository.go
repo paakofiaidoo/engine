@@ -1,7 +1,8 @@
 package repositories
 
 import (
-	"github.com/paakofiaidoo/juki/engine/data/models"
+	"juki-engine/data/models"
+
 	"gorm.io/gorm"
 )
 
@@ -10,11 +11,12 @@ import (
 * ============================================*/
 
 type Repository interface {
-	//Create(page *models.Page) error
-	//project
+	CreatePage(page *models.Page) error
+	GetPage(id string) (*models.Page, error)
+	UpdatePage(page *models.Page) error
 	CreateProject(project *models.Project) error
-	DeleteProject(id int) error
-	GetProject(id int) (*models.Project, error)
+	DeleteProject(id string) error
+	GetProject(id string) (*models.Project, error)
 	GetProjects() ([]*models.Project, error)
 	UpdateProject(project *models.Project) error
 }

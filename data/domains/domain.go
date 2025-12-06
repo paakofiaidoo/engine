@@ -3,7 +3,7 @@ package domains
 import (
 	"encoding/json"
 	"github.com/jinzhu/copier"
-	"github.com/paakofiaidoo/juki/engine/data/models"
+	"juki-engine/data/models"
 	"log"
 	"time"
 )

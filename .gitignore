@@ -48,6 +48,8 @@ go.work
 
 !README.md
 !LICENSE
+!buf.yaml
+!buf.gen.yaml
 
 # !Makefile
 

@@ -2,19 +2,20 @@ package database
 
 import (
 	"fmt"
-	"github.com/paakofiaidoo/juki/engine/data/models"
-	"gorm.io/driver/postgres"
-	"gorm.io/driver/sqlite"
+	"juki-engine/data/models"
 	"log"
 	"math"
 	"os"
 	"time"
 
+	"gorm.io/driver/postgres"
+	"gorm.io/driver/sqlite"
+
 	"gorm.io/gorm"
 )
 
 type Connection interface {
-	Engine() interface{}
+	Engine() *gorm.DB
 	Connect()
 	Migrate()
 	SetConfig(*gorm.Config)
@@ -26,7 +27,7 @@ type gormDB struct {
 	models []interface{}
 }
 
-func (db *gormDB) Engine() interface{} {
+func (db *gormDB) Engine() *gorm.DB {
 	return db.engine
 }
 
@@ -34,6 +35,10 @@ func New() Connection {
 	return &gormDB{
 		models: []interface{}{
 			&models.Page{},
+			&models.Project{},
+			&models.File{},
+			&models.Symbol{},
+			&models.DraftCommand{},
 		},
 	}
 }
