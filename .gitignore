@@ -24,3 +24,6 @@ pnpm-lock.yaml
 # Generated
 gen/
 out/
+.env
+.env.*
+!.env.example
