@@ -1,10 +1,10 @@
 package services
 
 import (
-	"juki-engine/data/dtos"
-	"juki-engine/data/models"
-	"juki-engine/data/repositories"
 	"juki-engine/pkg/bridge"
+	dtos2 "juki-engine/pkg/data/dtos"
+	"juki-engine/pkg/data/models"
+	"juki-engine/pkg/data/repositories"
 	"juki-engine/pkg/scripts"
 	"juki-engine/pkg/watcher"
 
@@ -16,12 +16,12 @@ import (
 * ============================================*/
 
 type Service interface {
-	CreateProject(project dtos.Project) (*models.Project, error)
+	CreateProject(project dtos2.Project) (*models.Project, error)
 	GetProject(id string) (*models.Project, error)
-	ListProjects() ([]dtos.Project, error)
-	UpdateProject(project dtos.Project) error
+	ListProjects() ([]dtos2.Project, error)
+	UpdateProject(project dtos2.Project) error
 	DeleteProject(id string) error
-	SyncProject(id string) (*dtos.Project, error)
+	SyncProject(id string) (*dtos2.Project, error)
 	PingWorker() (string, error)
 
 	// Page Service
@@ -36,7 +36,7 @@ type Service interface {
 	ConfigureCMS(projectID, cmsType, configJSON string) error
 
 	// Swarm Service
-	RunSwarm(projectID, prompt string) (<-chan dtos.SwarmEvent, error)
+	RunSwarm(projectID, prompt string) (<-chan dtos2.SwarmEvent, error)
 
 	// File Watcher Service
 	SubscribeToFileEvents(projectID string) (<-chan fsnotify.Event, error)

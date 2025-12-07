@@ -2,7 +2,7 @@ package database
 
 import (
 	"fmt"
-	"juki-engine/data/models"
+	"juki-engine/pkg/data/models"
 	"log"
 	"math"
 	"os"
@@ -39,6 +39,7 @@ func New() Connection {
 			&models.File{},
 			&models.Symbol{},
 			&models.DraftCommand{},
+			&models.Layout{},
 		},
 	}
 }

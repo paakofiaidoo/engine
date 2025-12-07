@@ -1,9 +1,7 @@
 package services
 
 import (
-	"time"
-
-	"juki-engine/data/models"
+	"juki-engine/pkg/data/models"
 
 	"github.com/google/uuid"
 )
@@ -15,8 +13,6 @@ func (s *service) CreatePage(projectID, name, route string) (*models.Page, error
 		Name:      name,
 		Route:     route,
 		Content:   "", // Empty initially
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
 	}
 
 	if err := s.repository.CreatePage(page); err != nil {

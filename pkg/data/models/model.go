@@ -2,7 +2,6 @@ package models
 
 import (
 	"encoding/json"
-	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -22,8 +21,18 @@ type Page struct {
 	Content     string // JSON string of canvas items
 	RawContent  string // Raw file content (TSX)
 	CustomTheme bool
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+}
+
+type Layout struct {
+	gorm.Model
+	ID             string `gorm:"primaryKey"`
+	ProjectID      string `gorm:"index"`
+	Name           string
+	Route          string // The directory route (e.g. "/" or "/blog")
+	Content        string // JSON
+	RawContent     string // File content
+	IsRoot         bool
+	ParentLayoutID *string
 }
 
 type Project struct {
@@ -34,7 +43,9 @@ type Project struct {
 	Description string
 	Framework   string
 	ApiKey      string // Encrypted or plain for now (MVP: plain)
-	Pages       []Page `gorm:"foreignKey:ProjectID"`
+	Port        int
+	Pages       []Page   `gorm:"foreignKey:ProjectID"`
+	Layouts     []Layout `gorm:"foreignKey:ProjectID"`
 }
 
 type File struct {
@@ -65,6 +76,14 @@ type DraftCommand struct {
 * ============================================*/
 
 func (t *Page) BeforeCreate(*gorm.DB) error {
+	if t.ID == "" {
+		t.ID = uuid.NewString()
+	}
+
+	return nil
+}
+
+func (t *Layout) BeforeCreate(*gorm.DB) error {
 	if t.ID == "" {
 		t.ID = uuid.NewString()
 	}

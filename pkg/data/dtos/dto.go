@@ -17,8 +17,21 @@ type Project struct {
 	Description  string              `json:"description"`
 	GlobalCSS    string              `json:"global_css"`
 	ApiKey       string              `json:"api_key"`
+	Port         int                 `json:"port"`
 	Pages        []PageDto           `json:"pages"`
+	RootRoute    RouteNode           `json:"root_route"`
 	NextJSConfig NextJSProjectConfig `json:"nextJSConfig" docs:"project next js config"`
+}
+
+type RouteNode struct {
+	ID       string      `json:"id"`
+	Name     string      `json:"name"`
+	Segment  string      `json:"segment"`
+	FullPath string      `json:"full_path"`
+	Type     string      `json:"type"` // STATIC, DYNAMIC
+	PageID   string      `json:"page_id,omitempty"`
+	LayoutID string      `json:"layout_id,omitempty"`
+	Children []RouteNode `json:"children"`
 }
 
 type NextJSProjectConfig struct {

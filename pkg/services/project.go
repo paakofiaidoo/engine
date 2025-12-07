@@ -3,8 +3,8 @@ package services
 import (
 	"errors"
 	"fmt"
-	"juki-engine/data/dtos"
-	"juki-engine/data/models"
+	"juki-engine/pkg/data/dtos"
+	"juki-engine/pkg/data/models"
 	"log"
 	"os"
 	"os/exec"
@@ -24,9 +24,8 @@ func (s *service) CreateProject(project dtos.Project) (*models.Project, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to get current working directory: %w", err)
 		}
-		// Default to ../../<project_name> relative to engine (.juki/engine)
-		// This puts it in the root of the workspace (juki-builder)
-		defaultPath := filepath.Join(cwd, "..", "..", project.Name)
+		// Default to ../../projects/<project_name> relative to engine (.juki/engine)
+		defaultPath := filepath.Join(cwd, "..", "..", "projects", project.Name)
 		absPath, err := filepath.Abs(defaultPath)
 		if err != nil {
 			return nil, fmt.Errorf("failed to resolve absolute path: %w", err)
@@ -35,12 +34,25 @@ func (s *service) CreateProject(project dtos.Project) (*models.Project, error) {
 		log.Printf("[Service] CreateProject: Path was empty, defaulting to: %s\n", project.Path)
 	}
 
-	// 1. Create DB Record
+	// 1. Determine Port
+	maxPort, err := s.repository.GetMaxPort()
+	if err != nil {
+		log.Printf("[Service] CreateProject: Failed to get max port, defaulting to 5175: %v\n", err)
+		maxPort = 5175
+	}
+	if maxPort == 0 {
+		maxPort = 5175 // Start base
+	}
+	newPort := maxPort + 1
+	log.Printf("[Service] CreateProject: Assigning Port %d\n", newPort)
+
+	// 2. Create DB Record
 	newProject := &models.Project{
 		Name:        project.Name,
 		Path:        project.Path,
 		Framework:   project.Framework,
 		Description: project.Description,
+		Port:        newPort,
 	}
 
 	if err := s.repository.CreateProject(newProject); err != nil {
@@ -63,26 +75,6 @@ func (s *service) CreateProject(project dtos.Project) (*models.Project, error) {
 	}
 
 	log.Println("[Service] CreateProject: Completed Successfully")
-
-	// 3. Create Default Home Page
-	// Since we can't easily parse the generated page.tsx yet, we'll create a default Juki page
-	// that overwrites the visual representation (but not the file yet, until save).
-	// Ideally, we should parse the file. For now, we provide a starting point.
-	defaultPage := &models.Page{
-		ID:          uuid.NewString(),
-		ProjectID:   newProject.ID,
-		Name:        "Home",
-		Description: "Main landing page",
-		Route:       "/",
-		Content:     `[{"id":"root","name":"Root","type":"ELEMENT","tag":"div","props":{"className":"min-h-screen p-8"},"content":[{"id":"h1","name":"Title","type":"ELEMENT","tag":"h1","props":{"className":"text-4xl font-bold mb-4"},"content":"Welcome to Juki"}]}]`,
-	}
-
-	if err := s.repository.CreatePage(defaultPage); err != nil {
-		log.Printf("[Service] CreateProject: Failed to create default page: %v\n", err)
-		// Don't fail the whole project creation for this
-	} else {
-		log.Printf("[Service] CreateProject: Default Home Page Created (ID: %s)\n", defaultPage.ID)
-	}
 
 	return newProject, nil
 }
@@ -202,30 +194,30 @@ func (s *service) SyncProject(id string) (*dtos.Project, error) {
 	appDir := filepath.Join(project.Path, "app")
 	log.Printf("[Service] SyncProject: Scanning %s\n", appDir)
 
-	var pages []models.Page
+	var newPages []models.Page
+	var newLayouts []models.Layout
 
 	err = filepath.Walk(appDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
-		if !info.IsDir() && info.Name() == "page.tsx" {
-			// Found a page
-			relPath, _ := filepath.Rel(appDir, path)
-			dir := filepath.Dir(relPath)
-			route := "/"
-			if dir != "." {
-				route = "/" + dir
-			}
+		// Removed duplicate error check: if err != nil { return err }
 
+		relPath, _ := filepath.Rel(appDir, path)
+		dir := filepath.Dir(relPath)
+		route := "/"
+		if dir != "." {
+			route = "/" + dir
+		}
+
+		// Handle Page
+		if !info.IsDir() && info.Name() == "page.tsx" {
 			content, err := os.ReadFile(path)
 			if err != nil {
-				log.Printf("Failed to read file %s: %v\n", path, err)
 				return nil
 			}
 
-			log.Printf("Found page: %s (Route: %s)\n", relPath, route)
-
-			// Check if page exists in DB
+			// Check DB
 			existingPage := -1
 			for i, p := range project.Pages {
 				if p.Route == route {
@@ -233,29 +225,56 @@ func (s *service) SyncProject(id string) (*dtos.Project, error) {
 					break
 				}
 			}
-
 			if existingPage != -1 {
-				// Update existing
 				project.Pages[existingPage].RawContent = string(content)
-				// We DO NOT update Content (JSON) here, frontend will do it
-				// Or we could try to parse it here if we had a parser? No, frontend does it.
-				// But we need to save RawContent to DB.
-				// Assuming Repository has UpdatePage or SaveProject cascades.
-				// GORM Save should cascade if configured.
 			} else {
-				// Create new page record
 				newPage := models.Page{
 					ID:         uuid.NewString(),
 					ProjectID:  project.ID,
-					Name:       dir, // Use dir name as page name
+					Name:       dir,
 					Route:      route,
 					RawContent: string(content),
-					Content:    "[]", // Empty JSON for now
+					Content:    "[]",
 				}
 				if dir == "." {
 					newPage.Name = "Home"
 				}
-				pages = append(pages, newPage)
+				newPages = append(newPages, newPage)
+			}
+		}
+
+		// Handle Layout
+		if !info.IsDir() && info.Name() == "layout.tsx" {
+			content, err := os.ReadFile(path)
+			if err != nil {
+				return nil
+			}
+
+			// Check DB
+			existingLayout := -1
+			for i, l := range project.Layouts {
+				if l.Route == route {
+					existingLayout = i
+					break
+				}
+			}
+
+			if existingLayout != -1 {
+				project.Layouts[existingLayout].RawContent = string(content)
+			} else {
+				newLayout := models.Layout{
+					ID:         uuid.NewString(),
+					ProjectID:  project.ID,
+					Name:       dir + " Layout",
+					Route:      route,
+					RawContent: string(content),
+					Content:    "[]",
+					IsRoot:     route == "/",
+				}
+				if route == "/" {
+					newLayout.Name = "Root Layout"
+				}
+				newLayouts = append(newLayouts, newLayout)
 			}
 		}
 		return nil
@@ -272,19 +291,27 @@ func (s *service) SyncProject(id string) (*dtos.Project, error) {
 		}
 	}
 
-	// 4. Save updates to DB
-	// We need to save the project to persist RawContent updates
+	// 4. Save updates to DB (Project + Existing Items)
+	// We need to save the project to persist RawContent updates for existing pages/layouts
 	if err := s.repository.UpdateProject(project); err != nil {
 		return nil, err
 	}
 
-	// 5. Create new pages
-	for _, p := range pages {
+	// 5. Create new items
+	for _, p := range newPages {
 		if err := s.repository.CreatePage(&p); err != nil {
 			log.Printf("Failed to create page %s: %v\n", p.Name, err)
 		} else {
 			// Add to project for return
 			project.Pages = append(project.Pages, p)
+		}
+	}
+	for _, l := range newLayouts {
+		if err := s.repository.CreateLayout(&l); err != nil { // Assuming CreateLayout exists in repository
+			log.Printf("Failed to create layout %s: %v\n", l.Name, err)
+		} else {
+			// Add to project for return
+			project.Layouts = append(project.Layouts, l)
 		}
 	}
 
@@ -300,6 +327,9 @@ func (s *service) SyncProject(id string) (*dtos.Project, error) {
 		})
 	}
 
+	// 7. Build Route Tree
+	rootRoute := s.buildRouteTree(project.Pages, project.Layouts)
+
 	return &dtos.Project{
 		ID:          project.ID,
 		Name:        project.Name,
@@ -309,7 +339,95 @@ func (s *service) SyncProject(id string) (*dtos.Project, error) {
 		ApiKey:      project.ApiKey,
 		GlobalCSS:   globalCSSContent,
 		Pages:       dtosPages,
+		RootRoute:   rootRoute,
+		Port:        project.Port,
 	}, nil
+}
+
+// buildRouteTree constructs a proto-compatible RouteNode tree from a flat list of pages and layouts
+func (s *service) buildRouteTree(pages []models.Page, layouts []models.Layout) dtos.RouteNode {
+	// A simple implementation that assumes standard Next.js routing
+	// This would ideally be more robust and handle dynamic segments/layouts
+	root := dtos.RouteNode{
+		ID:       "root",
+		Name:     "Root",
+		Segment:  "/",
+		FullPath: "/",
+		Type:     "STATIC",
+		Children: []dtos.RouteNode{},
+	}
+
+	// Helper to find layout for a specific route
+	findLayout := func(route string) string {
+		for _, l := range layouts {
+			if l.Route == route {
+				return l.ID
+			}
+		}
+		return ""
+	}
+
+	root.LayoutID = findLayout("/")
+
+	for _, page := range pages {
+		if page.Route == "/" {
+			root.PageID = page.ID
+			continue
+		}
+
+		// Split route into segments (e.g. "/blog/post" -> ["blog", "post"])
+		segments := strings.Split(strings.TrimPrefix(page.Route, "/"), "/")
+		currentNode := &root
+
+		// Traverse/Build tree
+		pathSoFar := ""
+		for _, segment := range segments {
+			pathSoFar += "/" + segment
+
+			// Check if child exists
+			var child *dtos.RouteNode
+			for i := range currentNode.Children {
+				if currentNode.Children[i].Segment == segment {
+					child = &currentNode.Children[i]
+					break
+				}
+			}
+
+			// If not, create it
+			if child == nil {
+				newNode := dtos.RouteNode{
+					ID:       uuid.NewString(),
+					Name:     segment, // formatting could be better
+					Segment:  segment,
+					FullPath: pathSoFar,
+					Type:     "STATIC", // Default
+					Children: []dtos.RouteNode{},
+				}
+				// Detect dynamic segments
+				if strings.HasPrefix(segment, "[") && strings.HasSuffix(segment, "]") {
+					newNode.Type = "DYNAMIC"
+				}
+
+				// Assign Layout if exists for this exact path
+				newNode.LayoutID = findLayout(pathSoFar)
+
+				currentNode.Children = append(currentNode.Children, newNode)
+				// Re-point child to the newly added node (last index)
+				// Note: In Go, we need to be careful with pointers to slice elements if slice reallocates.
+				// For this simple logic, we'll re-fetch the pointer or use index.
+				child = &currentNode.Children[len(currentNode.Children)-1]
+			}
+
+			// If this is the last segment, assign the PageID
+			if pathSoFar == page.Route {
+				child.PageID = page.ID
+			}
+
+			currentNode = child
+		}
+	}
+
+	return root
 }
 
 func (s *service) SavePage(projectID string, pageID string, content string) error {

@@ -2,10 +2,11 @@ package domains
 
 import (
 	"encoding/json"
-	"github.com/jinzhu/copier"
-	"juki-engine/data/models"
+	"juki-engine/pkg/data/models"
 	"log"
 	"time"
+
+	"github.com/jinzhu/copier"
 )
 
 /* ============================================

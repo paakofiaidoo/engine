@@ -17,7 +17,7 @@ import (
 func main() {
 	client := enginev1connect.NewEngineServiceClient(
 		http.DefaultClient,
-		"http://localhost:8080",
+		"http://localhost:4220",
 	)
 
 	// cwd, _ := os.Getwd()

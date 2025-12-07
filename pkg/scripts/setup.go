@@ -3,7 +3,7 @@ package scripts
 import (
 	"encoding/json"
 	"fmt"
-	"juki-engine/data/dtos"
+	"juki-engine/pkg/data/dtos"
 	"log"
 	"os"
 	"os/exec"

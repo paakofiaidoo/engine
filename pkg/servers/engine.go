@@ -3,9 +3,9 @@ package api
 import (
 	"context"
 	"fmt"
+	dtos2 "juki-engine/pkg/data/dtos"
 
-	"juki-engine/data/dtos"
-	enginev1 "juki-engine/gen/engine/v1"
+	enginev1 "juki-engine/pkg/gen/juki/engine/v1"
 	"juki-engine/pkg/services"
 
 	"connectrpc.com/connect"
@@ -45,7 +45,7 @@ func (s *EngineServer) CreateProject(
 ) (*connect.Response[enginev1.CreateProjectResponse], error) {
 	fmt.Printf("[API] CreateProject Request Received: Name=%s, Path=%s, Framework=%s\n", req.Msg.Name, req.Msg.Path, req.Msg.Framework)
 
-	projectDTO := dtos.Project{
+	projectDTO := dtos2.Project{
 		Name:        req.Msg.Name,
 		Path:        req.Msg.Path,
 		Framework:   req.Msg.Framework,
@@ -65,7 +65,7 @@ func (s *EngineServer) CreateProject(
 			Id:          createdProject.ID,
 			Name:        createdProject.Name,
 			Path:        createdProject.Path,
-			Framework:   createdProject.Framework,
+			Settings:    &enginev1.ProjectSettings{Framework: createdProject.Framework},
 			Description: createdProject.Description,
 		},
 	}), nil
@@ -98,7 +98,7 @@ func (s *EngineServer) GetProject(
 			Id:          project.ID,
 			Name:        project.Name,
 			Path:        project.Path,
-			Framework:   project.Framework,
+			Settings:    &enginev1.ProjectSettings{Framework: project.Framework},
 			Description: project.Description,
 			ApiKey:      project.ApiKey,
 			Pages:       pbPages,
@@ -134,7 +134,7 @@ func (s *EngineServer) ListProjects(
 			Id:          p.ID,
 			Name:        p.Name,
 			Path:        p.Path,
-			Framework:   p.Framework,
+			Settings:    &enginev1.ProjectSettings{Framework: p.Framework},
 			Description: p.Description,
 			ApiKey:      p.ApiKey,
 			Pages:       pbPages,
@@ -167,7 +167,7 @@ func (s *EngineServer) UpdateProject(
 	// Path and Framework usually shouldn't change easily, but we can allow it if needed.
 	// For now, let's stick to metadata updates.
 
-	projectDTO := dtos.Project{
+	projectDTO := dtos2.Project{
 		ID:          existingProject.ID,
 		Name:        existingProject.Name,
 		Path:        existingProject.Path,
@@ -231,7 +231,7 @@ func (s *EngineServer) SyncProject(
 			Id:          project.ID,
 			Name:        project.Name,
 			Path:        project.Path,
-			Framework:   project.Framework,
+			Settings:    &enginev1.ProjectSettings{Framework: project.Framework},
 			Description: project.Description,
 			GlobalCss:   project.GlobalCSS,
 			Pages:       pbPages,
@@ -345,7 +345,7 @@ func (s *EngineServer) RunSwarm(
 	for event := range events {
 		var pbEvent *enginev1.SwarmEvent
 		switch event.Type {
-		case dtos.SwarmEventPlan:
+		case dtos2.SwarmEventPlan:
 			var steps []*enginev1.SwarmStep
 			for _, step := range event.Plan.Steps {
 				steps = append(steps, &enginev1.SwarmStep{
@@ -359,7 +359,7 @@ func (s *EngineServer) RunSwarm(
 					Plan: &enginev1.SwarmPlan{Steps: steps},
 				},
 			}
-		case dtos.SwarmEventLog:
+		case dtos2.SwarmEventLog:
 			pbEvent = &enginev1.SwarmEvent{
 				Event: &enginev1.SwarmEvent_Log{
 					Log: &enginev1.SwarmLog{
@@ -369,7 +369,7 @@ func (s *EngineServer) RunSwarm(
 					},
 				},
 			}
-		case dtos.SwarmEventResult:
+		case dtos2.SwarmEventResult:
 			pbEvent = &enginev1.SwarmEvent{
 				Event: &enginev1.SwarmEvent_Result{
 					Result: &enginev1.SwarmResult{

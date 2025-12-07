@@ -27,3 +27,6 @@ out/
 .env
 .env.*
 !.env.example
+*.db
+main
+tmp

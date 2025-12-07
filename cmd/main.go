@@ -2,21 +2,24 @@ package main
 
 import (
 	"fmt"
+
 	"net/http"
 	"time"
 
-	"juki-engine/data/repositories"
-	"juki-engine/gen/engine/v1/enginev1connect"
-	"juki-engine/internal/api"
 	"juki-engine/pkg/bridge"
 	"juki-engine/pkg/config"
+	"juki-engine/pkg/data/repositories"
 	"juki-engine/pkg/database"
+	enginev1connect "juki-engine/pkg/gen/juki/engine/v1/v1connect"
 	"juki-engine/pkg/scripts"
+	api "juki-engine/pkg/servers"
 	"juki-engine/pkg/services"
 	"juki-engine/pkg/system"
 	"juki-engine/pkg/watcher"
 
+	"github.com/danielgtaylor/huma/v2/humacli"
 	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v4/middleware"
 )
 
 type Options struct {

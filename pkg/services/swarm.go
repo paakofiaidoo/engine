@@ -2,7 +2,7 @@ package services
 
 import (
 	"fmt"
-	"juki-engine/data/dtos"
+	"juki-engine/pkg/data/dtos"
 	"time"
 )
 
