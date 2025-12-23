@@ -426,8 +426,44 @@ func (s *service) buildRouteTree(pages []models.Page, layouts []models.Layout) d
 			currentNode = child
 		}
 	}
-
 	return root
+}
+
+func (s *service) RunProject(projectID string) (int, error) {
+	log.Printf("[Service] RunProject: Running project %s\n", projectID)
+
+	project, err := s.repository.GetProject(projectID)
+	if err != nil {
+		return 0, err
+	}
+
+	// Script path relative to engine cwd (.juki/engine) -> ../../scripts/run-project.sh
+	cwd, err := os.Getwd()
+	if err != nil {
+		log.Printf("[Service] RunProject: Failed to get CWD: %v\n", err)
+		return 0, err
+	}
+	scriptPath := filepath.Join(cwd, "..", "..", "scripts", "run-project.sh")
+
+	// Execute Run Script
+	cmd := exec.Command(scriptPath, project.Path, fmt.Sprintf("%d", project.Port))
+	if output, err := cmd.CombinedOutput(); err != nil {
+		log.Printf("[Service] RunProject: Failed for %s: %v\nOutput: %s\n", project.Name, err, string(output))
+		// Optional: return error, or maybe just proceed if it was "already running" exit code 0 handled by script?
+		// Script returns exit 0 if already running.
+		// If real error, script returns 1.
+		if exitError, ok := err.(*exec.ExitError); ok {
+			if exitError.ExitCode() != 0 {
+				return 0, fmt.Errorf("failed to run project: %s", string(output))
+			}
+		} else {
+			return 0, err
+		}
+	} else {
+		log.Printf("[Service] RunProject: Triggered for %s (Port %d)\n", project.Name, project.Port)
+	}
+
+	return project.Port, nil
 }
 
 func (s *service) SavePage(projectID string, pageID string, content string) error {

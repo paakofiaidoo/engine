@@ -296,6 +296,25 @@ func (s *EngineServer) BuildProject(
 	}), nil
 }
 
+func (s *EngineServer) RunProject(
+	ctx context.Context,
+	req *connect.Request[enginev1.RunProjectRequest],
+) (*connect.Response[enginev1.RunProjectResponse], error) {
+	fmt.Printf("[API] RunProject Request Received: ProjectID=%s\n", req.Msg.ProjectId)
+
+	port, err := s.svc.RunProject(req.Msg.ProjectId)
+	if err != nil {
+		fmt.Printf("[API] RunProject Failed: %v\n", err)
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+
+	return connect.NewResponse(&enginev1.RunProjectResponse{
+		Success: true,
+		Message: fmt.Sprintf("Project running on port %d", port),
+		Port:    int32(port),
+	}), nil
+}
+
 // Plugin & CMS Handlers
 
 func (s *EngineServer) InstallPlugin(
