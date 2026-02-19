@@ -86,10 +86,11 @@ func (s *EngineServer) GetProject(
 	var pbPages []*enginev1.Page
 	for _, page := range project.Pages {
 		pbPages = append(pbPages, &enginev1.Page{
-			Id:      page.ID,
-			Name:    page.Name,
-			Route:   page.Route,
-			Content: page.Content,
+			Id:              page.ID,
+			Name:            page.Name,
+			Route:           page.Route,
+			Content:         page.Content,
+			ComposedContent: page.ComposedContent,
 		})
 	}
 
@@ -123,10 +124,11 @@ func (s *EngineServer) ListProjects(
 		var pbPages []*enginev1.Page
 		for _, page := range p.Pages {
 			pbPages = append(pbPages, &enginev1.Page{
-				Id:      page.ID,
-				Name:    page.Name,
-				Route:   page.Route,
-				Content: page.Content,
+				Id:              page.ID,
+				Name:            page.Name,
+				Route:           page.Route,
+				Content:         page.Content,
+				ComposedContent: page.ComposedContent,
 			})
 		}
 
@@ -218,11 +220,12 @@ func (s *EngineServer) SyncProject(
 	var pbPages []*enginev1.Page
 	for _, page := range project.Pages {
 		pbPages = append(pbPages, &enginev1.Page{
-			Id:         page.ID,
-			Name:       page.Name,
-			Route:      page.Route,
-			Content:    page.Content,
-			RawContent: page.RawContent,
+			Id:              page.ID,
+			Name:            page.Name,
+			Route:           page.Route,
+			Content:         page.Content,
+			ComposedContent: page.ComposedContent,
+			RawContent:      page.RawContent,
 		})
 	}
 
@@ -311,7 +314,7 @@ func (s *EngineServer) RunProject(
 	return connect.NewResponse(&enginev1.RunProjectResponse{
 		Success: true,
 		Message: fmt.Sprintf("Project running on port %d", port),
-		Port:    int32(port),
+		Url:     fmt.Sprintf("http://localhost:%d", port),
 	}), nil
 }
 
@@ -352,7 +355,7 @@ func (s *EngineServer) ConfigureCMS(
 func (s *EngineServer) RunSwarm(
 	ctx context.Context,
 	req *connect.Request[enginev1.RunSwarmRequest],
-	stream *connect.ServerStream[enginev1.SwarmEvent],
+	stream *connect.ServerStream[enginev1.RunSwarmResponse],
 ) error {
 	fmt.Printf("[API] RunSwarm Request Received: ProjectID=%s\n", req.Msg.ProjectId)
 
@@ -362,7 +365,7 @@ func (s *EngineServer) RunSwarm(
 	}
 
 	for event := range events {
-		var pbEvent *enginev1.SwarmEvent
+		var pbEvent *enginev1.RunSwarmResponse
 		switch event.Type {
 		case dtos2.SwarmEventPlan:
 			var steps []*enginev1.SwarmStep
@@ -373,14 +376,14 @@ func (s *EngineServer) RunSwarm(
 					Status:      step.Status,
 				})
 			}
-			pbEvent = &enginev1.SwarmEvent{
-				Event: &enginev1.SwarmEvent_Plan{
+			pbEvent = &enginev1.RunSwarmResponse{
+				Event: &enginev1.RunSwarmResponse_Plan{
 					Plan: &enginev1.SwarmPlan{Steps: steps},
 				},
 			}
 		case dtos2.SwarmEventLog:
-			pbEvent = &enginev1.SwarmEvent{
-				Event: &enginev1.SwarmEvent_Log{
+			pbEvent = &enginev1.RunSwarmResponse{
+				Event: &enginev1.RunSwarmResponse_Log{
 					Log: &enginev1.SwarmLog{
 						StepId:  event.Log.StepID,
 						Message: event.Log.Message,
@@ -389,8 +392,8 @@ func (s *EngineServer) RunSwarm(
 				},
 			}
 		case dtos2.SwarmEventResult:
-			pbEvent = &enginev1.SwarmEvent{
-				Event: &enginev1.SwarmEvent_Result{
+			pbEvent = &enginev1.RunSwarmResponse{
+				Event: &enginev1.RunSwarmResponse_Result{
 					Result: &enginev1.SwarmResult{
 						Success: event.Result.Success,
 						Message: event.Result.Message,
@@ -414,7 +417,7 @@ func (s *EngineServer) RunSwarm(
 func (s *EngineServer) SubscribeToFileEvents(
 	ctx context.Context,
 	req *connect.Request[enginev1.SubscribeToFileEventsRequest],
-	stream *connect.ServerStream[enginev1.FileEvent],
+	stream *connect.ServerStream[enginev1.SubscribeToFileEventsResponse],
 ) error {
 	fmt.Printf("[API] SubscribeToFileEvents Request Received: ProjectID=%s\n", req.Msg.ProjectId)
 
@@ -446,7 +449,7 @@ func (s *EngineServer) SubscribeToFileEvents(
 				eventType = "CHMOD"
 			}
 
-			if err := stream.Send(&enginev1.FileEvent{
+			if err := stream.Send(&enginev1.SubscribeToFileEventsResponse{
 				Path: event.Name,
 				Type: eventType,
 			}); err != nil {

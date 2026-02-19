@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-
 	"net/http"
 	"time"
 
@@ -11,12 +10,14 @@ import (
 	"juki-engine/pkg/data/repositories"
 	"juki-engine/pkg/database"
 	enginev1connect "juki-engine/pkg/gen/juki/engine/v1/v1connect"
+	jukimiddleware "juki-engine/pkg/middleware"
 	"juki-engine/pkg/scripts"
 	api "juki-engine/pkg/servers"
 	"juki-engine/pkg/services"
 	"juki-engine/pkg/system"
 	"juki-engine/pkg/watcher"
 
+	"connectrpc.com/connect"
 	"github.com/danielgtaylor/huma/v2/humacli"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
@@ -104,10 +105,24 @@ func main() {
 	* ============================================*/
 
 	// ConnectRPC Setup
-	// ConnectRPC Setup
+	activityLogger := jukimiddleware.NewActivityLogger(repository)
+	interceptorOpt := connect.WithInterceptors(activityLogger)
+
+	// Engine Service
 	engineServer := api.NewEngineServer(service)
-	path, handler := enginev1connect.NewEngineServiceHandler(engineServer)
-	app.Any(path+"*", echo.WrapHandler(handler))
+	enginePath, engineHandler := enginev1connect.NewEngineServiceHandler(engineServer, interceptorOpt)
+	app.Any(enginePath+"*", echo.WrapHandler(engineHandler))
+
+	// Terminal Service
+	terminalService := services.NewTerminalService(repository)
+	terminalServer := api.NewTerminalServer(terminalService)
+	terminalPath, terminalHandler := enginev1connect.NewTerminalServiceHandler(terminalServer, interceptorOpt)
+	app.Any(terminalPath+"*", echo.WrapHandler(terminalHandler))
+
+	// Activity Service
+	activityServer := api.NewActivityServer()
+	activityPath, activityHandler := enginev1connect.NewActivityServiceHandler(activityServer)
+	app.Any(activityPath+"*", echo.WrapHandler(activityHandler))
 
 	cli := humacli.New(func(hooks humacli.Hooks, options *Options) {
 

@@ -1,7 +1,7 @@
 package services
 
 import (
-	"errors"
+	"encoding/json"
 	"fmt"
 	"juki-engine/pkg/data/dtos"
 	"juki-engine/pkg/data/models"
@@ -62,16 +62,13 @@ func (s *service) CreateProject(project dtos.Project) (*models.Project, error) {
 	log.Printf("[Service] CreateProject: DB Record Created (ID: %s)\n", newProject.ID)
 
 	// 2. Run Script
-	log.Printf("[Service] CreateProject: Running Scaffolding Script for %s...\n", project.Framework)
-	switch project.Framework {
-	case "NextJS":
-		s.scripts.CreateAppNextApp(project)
-	default:
-		log.Printf("[Service] CreateProject: Unsupported Framework: %s\n", project.Framework)
-		// If script fails or framework not supported, should we delete the DB record?
-		// For now, let's just return error.
-		return nil, errors.New("not supported framework")
+	log.Println("[Service] CreateProject: Running Scaffolding Script for NextJS...")
+	s.scripts.CreateAppNextApp(project)
 
+	log.Println("[Service] CreateProject: Initial Sync Triggered...")
+	if _, err := s.SyncProject(newProject.ID); err != nil {
+		log.Printf("[Service] CreateProject: Initial Sync Failed: %v\n", err)
+		// We don't return error here because the project was created and scaffolded
 	}
 
 	log.Println("[Service] CreateProject: Completed Successfully")
@@ -93,11 +90,12 @@ func (s *service) ListProjects() ([]dtos.Project, error) {
 		var pages []dtos.PageDto
 		for _, page := range p.Pages {
 			pages = append(pages, dtos.PageDto{
-				ID:         page.ID,
-				Name:       page.Name,
-				Route:      page.Route,
-				Content:    page.Content,
-				RawContent: page.RawContent,
+				ID:              page.ID,
+				Name:            page.Name,
+				Route:           page.Route,
+				Content:         page.Content,
+				ComposedContent: page.ComposedContent,
+				RawContent:      page.RawContent,
 			})
 		}
 		dtosProjects = append(dtosProjects, dtos.Project{
@@ -217,6 +215,19 @@ func (s *service) SyncProject(id string) (*dtos.Project, error) {
 				return nil
 			}
 
+			// PARSE VIA BRIDGE
+			log.Printf("[SyncProject] Parsing page: %s\n", path)
+			parsedContent, err := s.bridge.Call("parse_jsx", map[string]interface{}{
+				"code": string(content),
+			})
+			var contentJson string
+			if err == nil {
+				contentJson = string(parsedContent)
+			} else {
+				log.Printf("[SyncProject] Failed to parse JSX for %s: %v\n", path, err)
+				contentJson = "[]"
+			}
+
 			// Check DB
 			existingPage := -1
 			for i, p := range project.Pages {
@@ -227,6 +238,13 @@ func (s *service) SyncProject(id string) (*dtos.Project, error) {
 			}
 			if existingPage != -1 {
 				project.Pages[existingPage].RawContent = string(content)
+				project.Pages[existingPage].Content = contentJson
+				// Explicitly update
+				if err := s.repository.UpdatePage(&project.Pages[existingPage]); err != nil {
+					log.Printf("[SyncProject] Failed to update existing page %s: %v\n", route, err)
+				} else {
+					log.Printf("[SyncProject] Updated existing page %s (Content size: %d)\n", route, len(contentJson))
+				}
 			} else {
 				newPage := models.Page{
 					ID:         uuid.NewString(),
@@ -234,7 +252,7 @@ func (s *service) SyncProject(id string) (*dtos.Project, error) {
 					Name:       dir,
 					Route:      route,
 					RawContent: string(content),
-					Content:    "[]",
+					Content:    contentJson,
 				}
 				if dir == "." {
 					newPage.Name = "Home"
@@ -250,6 +268,20 @@ func (s *service) SyncProject(id string) (*dtos.Project, error) {
 				return nil
 			}
 
+			// PARSE VIA BRIDGE
+			log.Printf("[SyncProject] Parsing layout: %s\n", path)
+			parsedContent, err := s.bridge.Call("parse_jsx", map[string]interface{}{
+				"code": string(content),
+			})
+			var contentJson string
+			if err == nil {
+				contentJson = string(parsedContent)
+				log.Printf("[SyncProject] Successfully parsed layout: %s (JSON size: %d)\n", path, len(contentJson))
+			} else {
+				log.Printf("[SyncProject] Failed to parse JSX for %s: %v\n", path, err)
+				contentJson = "[]"
+			}
+
 			// Check DB
 			existingLayout := -1
 			for i, l := range project.Layouts {
@@ -261,6 +293,13 @@ func (s *service) SyncProject(id string) (*dtos.Project, error) {
 
 			if existingLayout != -1 {
 				project.Layouts[existingLayout].RawContent = string(content)
+				project.Layouts[existingLayout].Content = contentJson
+				// Explicitly update
+				if err := s.repository.UpdateLayout(&project.Layouts[existingLayout]); err != nil {
+					log.Printf("[SyncProject] Failed to update existing layout %s: %v\n", route, err)
+				} else {
+					log.Printf("[SyncProject] Updated existing layout %s\n", route)
+				}
 			} else {
 				newLayout := models.Layout{
 					ID:         uuid.NewString(),
@@ -268,7 +307,7 @@ func (s *service) SyncProject(id string) (*dtos.Project, error) {
 					Name:       dir + " Layout",
 					Route:      route,
 					RawContent: string(content),
-					Content:    "[]",
+					Content:    contentJson,
 					IsRoot:     route == "/",
 				}
 				if route == "/" {
@@ -307,7 +346,7 @@ func (s *service) SyncProject(id string) (*dtos.Project, error) {
 		}
 	}
 	for _, l := range newLayouts {
-		if err := s.repository.CreateLayout(&l); err != nil { // Assuming CreateLayout exists in repository
+		if err := s.repository.CreateLayout(&l); err != nil {
 			log.Printf("Failed to create layout %s: %v\n", l.Name, err)
 		} else {
 			// Add to project for return
@@ -315,32 +354,53 @@ func (s *service) SyncProject(id string) (*dtos.Project, error) {
 		}
 	}
 
-	// 6. Return DTO
+	// 5.5 Hydration: Normalize and Compose Pages
+	// We use SavePage which handles: Normalization (Tree), Composition, and DB Update.
+	for _, p := range project.Pages {
+		// SavePage expects content. If p.Content is empty, it might be fine or we skip.
+		if p.Content != "" {
+			if err := s.SavePage(project.ID, p.ID, p.Content); err != nil {
+				log.Printf("[SyncProject] Failed to save/normalize page %s: %v\n", p.Name, err)
+			}
+		} else {
+			// Ensure empty content is also saved if needed types depend on it?
+			// Likely we skip empty content for normalization.
+		}
+	}
+
+	// 6. Re-fetch Project to get updated state (ComposedContent, etc.)
+	freshProject, err := s.repository.GetProject(project.ID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to reload project after sync: %w", err)
+	}
+
+	// 7. Return DTO
 	var dtosPages []dtos.PageDto
-	for _, page := range project.Pages {
+	for _, page := range freshProject.Pages {
 		dtosPages = append(dtosPages, dtos.PageDto{
-			ID:         page.ID,
-			Name:       page.Name,
-			Route:      page.Route,
-			Content:    page.Content,
-			RawContent: page.RawContent,
+			ID:              page.ID,
+			Name:            page.Name,
+			Route:           page.Route,
+			Content:         page.Content,
+			ComposedContent: page.ComposedContent,
+			RawContent:      page.RawContent,
 		})
 	}
 
-	// 7. Build Route Tree
-	rootRoute := s.buildRouteTree(project.Pages, project.Layouts)
+	// 8. Build Route Tree
+	rootRoute := s.buildRouteTree(freshProject.Pages, freshProject.Layouts)
 
 	return &dtos.Project{
-		ID:          project.ID,
-		Name:        project.Name,
-		Path:        project.Path,
-		Framework:   project.Framework,
-		Description: project.Description,
-		ApiKey:      project.ApiKey,
+		ID:          freshProject.ID,
+		Name:        freshProject.Name,
+		Path:        freshProject.Path,
+		Framework:   freshProject.Framework,
+		Description: freshProject.Description,
+		ApiKey:      freshProject.ApiKey,
 		GlobalCSS:   globalCSSContent,
 		Pages:       dtosPages,
 		RootRoute:   rootRoute,
-		Port:        project.Port,
+		Port:        freshProject.Port,
 	}, nil
 }
 
@@ -469,46 +529,136 @@ func (s *service) RunProject(projectID string) (int, error) {
 func (s *service) SavePage(projectID string, pageID string, content string) error {
 	log.Printf("[Service] SavePage: Saving page %s for project %s\n", pageID, projectID)
 
+	// 1. Verify Project & Page Exist
 	project, err := s.repository.GetProject(projectID)
 	if err != nil {
 		return err
 	}
-
 	page, err := s.repository.GetPage(pageID)
 	if err != nil {
 		return err
 	}
 
-	// Construct file path
-	// Assuming Next.js App Router: project/app/[route]/page.tsx
-	// Route "/" -> "app/page.tsx"
-	// Route "/about" -> "app/about/page.tsx"
-
-	relPath := page.Route
-	if relPath == "/" {
-		relPath = ""
-	} else if strings.HasPrefix(relPath, "/") {
-		relPath = relPath[1:]
+	// 2. Parse Content String into Tree
+	var rootNodes []interface{}
+	if err := json.Unmarshal([]byte(content), &rootNodes); err != nil {
+		// Try parsing as single object if array fails
+		var singleNode interface{}
+		if err2 := json.Unmarshal([]byte(content), &singleNode); err2 == nil {
+			rootNodes = []interface{}{singleNode}
+		} else {
+			// If it's not JSON, assume raw text?
+			// But user said "content should not leave... a content can be a sub content..."
+			// We must assume JSON.
+			return fmt.Errorf("invalid json content: %w", err)
+		}
 	}
 
-	filePath := filepath.Join(project.Path, "app", relPath, "page.tsx")
-	log.Printf("[Service] SavePage: Writing to %s\n", filePath)
+	// 3. Flatten Tree into Content Models
+	var flatContent []models.Content
+	var flatten func(nodes []interface{}, parentID *string)
 
-	// Write to file
-	if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
-		return fmt.Errorf("failed to write file: %w", err)
+	flatten = func(nodes []interface{}, parentID *string) {
+		for i, nodeRaw := range nodes {
+			nodeMap, ok := nodeRaw.(map[string]interface{})
+			if !ok {
+				continue
+			}
+
+			// Extract standard fields
+			id, _ := nodeMap["id"].(string)
+			if id == "" {
+				id = uuid.New().String()
+			}
+			typeStr, _ := nodeMap["type"].(string) // ELEMENT, COMPONENT
+			tag, _ := nodeMap["tag"].(string)
+			text, _ := nodeMap["text"].(string)
+
+			// Props
+			propsRaw := nodeMap["props"]
+			var props models.JSONMap
+			if propsRaw != nil {
+				propsBytes, _ := json.Marshal(propsRaw)
+				json.Unmarshal(propsBytes, &props)
+			}
+
+			contentModel := models.Content{
+				ID:        id,
+				ProjectID: projectID,
+				PageID:    &pageID,
+				ParentID:  parentID,
+				Type:      typeStr,
+				Tag:       tag,
+				Props:     props,
+				Text:      text,
+				Order:     i,
+			}
+			flatContent = append(flatContent, contentModel)
+
+			// Recurse on children
+			contentField := nodeMap["content"]
+			if childrenList, ok := contentField.([]interface{}); ok {
+				flatten(childrenList, &id)
+			} else if deepContentStr, ok := contentField.(string); ok {
+				var nestedChildren []interface{}
+				if err := json.Unmarshal([]byte(deepContentStr), &nestedChildren); err == nil {
+					flatten(nestedChildren, &id)
+				} else {
+					flatContent[len(flatContent)-1].Text = deepContentStr
+				}
+			}
+		}
 	}
 
-	// Update DB
-	page.RawContent = content
-	// We might want to update the JSON content too if we trust the frontend sent it correctly?
-	// For now, let's assume the frontend syncs state separately or we just care about the file.
+	flatten(rootNodes, nil)
+
+	// 4. Update Page Content (Legacy/Cache) & Composed Content
+	page.Content = content
+
+	// Re-compose content
+	layout := s.findLayoutForPage(project, page)
+	if layout != nil && layout.Content != "" {
+		var layoutItems interface{}
+		var pageItems interface{}
+		json.Unmarshal([]byte(layout.Content), &layoutItems)
+		json.Unmarshal([]byte(content), &pageItems)
+
+		composed, err := s.bridge.Call("compose", map[string]interface{}{
+			"layout": layoutItems,
+			"page":   pageItems,
+		})
+		if err == nil {
+			page.ComposedContent = string(composed)
+		} else {
+			log.Printf("[SavePage] Composition failed: %v\n", err)
+			page.ComposedContent = content
+		}
+	} else {
+		page.ComposedContent = content
+	}
 
 	if err := s.repository.UpdatePage(page); err != nil {
-		log.Printf("Failed to update page in DB: %v\n", err)
-		// Non-fatal if file write succeeded
+		return err
 	}
 
+	// 5. Save Normalized Content Tree
+	if err := s.repository.SaveTree(projectID, pageID, flatContent); err != nil {
+		return fmt.Errorf("failed to save content tree: %w", err)
+	}
+
+	return nil
+}
+
+func (s *service) findLayoutForPage(project *models.Project, page *models.Page) *models.Layout {
+	// Simple lookup for root layout for now
+	for _, l := range project.Layouts {
+		if l.IsRoot {
+			return &l
+		}
+	}
+	if len(project.Layouts) > 0 {
+		return &project.Layouts[0]
+	}
 	return nil
 }
 

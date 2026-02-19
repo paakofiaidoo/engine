@@ -31,6 +31,7 @@ type Service interface {
 
 	// Build Service
 	BuildProject(projectID string) (string, error)
+	RunProject(projectID string) (int, error)
 
 	InstallPlugin(projectID, pluginName, version string) error
 	ConfigureCMS(projectID, cmsType, configJSON string) error

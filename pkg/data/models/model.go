@@ -13,14 +13,15 @@ import (
 
 type Page struct {
 	gorm.Model
-	ID          string `gorm:"primaryKey"`
-	ProjectID   string `gorm:"index"`
-	Name        string
-	Description string
-	Route       string
-	Content     string // JSON string of canvas items
-	RawContent  string // Raw file content (TSX)
-	CustomTheme bool
+	ID              string `gorm:"primaryKey"`
+	ProjectID       string `gorm:"index"`
+	Name            string
+	Description     string
+	Route           string
+	Content         string // JSON string of canvas items
+	ComposedContent string // JSON string of layout + page items
+	RawContent      string // Raw file content (TSX)
+	CustomTheme     bool
 }
 
 type Layout struct {

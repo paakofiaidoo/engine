@@ -1,12 +1,13 @@
 package dtos
 
 type PageDto struct {
-	ID          string `json:"id"`
-	Name        string `json:"name" docs:"page name"`
-	Route       string `json:"route"`
-	Content     string `json:"content"`
-	RawContent  string `json:"raw_content"`
-	CustomTheme bool   `json:"custom_theme"`
+	ID              string `json:"id"`
+	Name            string `json:"name" docs:"page name"`
+	Route           string `json:"route"`
+	Content         string `json:"content"`
+	ComposedContent string `json:"composed_content"`
+	RawContent      string `json:"raw_content"`
+	CustomTheme     bool   `json:"custom_theme"`
 }
 
 type Project struct {

@@ -55,6 +55,10 @@ func (r *repository) UpdatePage(page *models.Page) error {
 	return r.store.Save(page).Error
 }
 
+func (r *repository) UpdateLayout(layout *models.Layout) error {
+	return r.store.Save(layout).Error
+}
+
 func (r *repository) GetMaxPort() (int, error) {
 	var maxPort int
 	// Select max(port) from projects. If null (no projects), it returns 0 (scan default for int)

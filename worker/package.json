@@ -4,7 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "ts-node test_worker_full.ts",
+    "build": "tsc"
   },
   "keywords": [],
   "author": "",
@@ -12,8 +13,10 @@
   "type": "commonjs",
   "dependencies": {
     "@types/node": "^24.10.1",
+    "@types/uuid": "^11.0.0",
     "ts-morph": "^27.0.2",
     "ts-node": "^10.9.2",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "uuid": "^13.0.0"
   }
 }

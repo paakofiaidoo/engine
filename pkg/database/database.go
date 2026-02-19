@@ -40,6 +40,9 @@ func New() Connection {
 			&models.Symbol{},
 			&models.DraftCommand{},
 			&models.Layout{},
+			&models.ActivityLog{},
+			&models.TerminalActivity{},
+			&models.Content{},
 		},
 	}
 }
