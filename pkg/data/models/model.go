@@ -49,6 +49,149 @@ type Project struct {
 	Layouts     []Layout `gorm:"foreignKey:ProjectID"`
 }
 
+type UserComponent struct {
+	gorm.Model
+	ID        string `gorm:"primaryKey"`
+	ProjectID string `gorm:"index"`
+	Name      string
+	Content   string // JSON stringified AnyCanvasItem tree
+}
+
+func (t *UserComponent) BeforeCreate(*gorm.DB) error {
+	if t.ID == "" {
+		t.ID = uuid.NewString()
+	}
+	return nil
+}
+
+// ConsoleLog stores a single browser console.log/warn/error/info entry.
+// Retention: rolling 1000 per project (enforced in repository).
+type ConsoleLog struct {
+	gorm.Model
+	ID             string `gorm:"primaryKey"`
+	ProjectID      string `gorm:"index"`
+	SessionID      string `gorm:"index"`
+	Level          string // "log" | "info" | "warn" | "error" | "debug"
+	Message        string
+	ArgsJSON       string // JSON array of serialized args
+	TimestampMs    int64
+	SourceLocation string // "file.tsx:12:4" from Error.stack
+}
+
+func (t *ConsoleLog) BeforeCreate(*gorm.DB) error {
+	if t.ID == "" {
+		t.ID = uuid.NewString()
+	}
+	return nil
+}
+
+// AIProvider stores user-configured AI provider credentials per project.
+type AIProvider struct {
+	gorm.Model
+	ID           string `gorm:"primaryKey"`
+	ProjectID    string `gorm:"index"`
+	Name         string // "claude" | "gemini" | "openai"
+	APIKey       string // encrypted in production
+	ModelName    string // e.g. "claude-opus-4-5" or "gemini-2.0-flash"
+	TokenLimit   int64
+	TokensUsed   int64
+	IsActive     bool
+	Priority     int // lower = higher priority for auto-rotation
+}
+
+func (t *AIProvider) BeforeCreate(*gorm.DB) error {
+	if t.ID == "" {
+		t.ID = uuid.NewString()
+	}
+	return nil
+}
+
+// AIConversation groups messages into a thread (per project + agent type).
+type AIConversation struct {
+	gorm.Model
+	ID        string `gorm:"primaryKey"`
+	ProjectID string `gorm:"index"`
+	AgentType string // "code_pilot" | "pm" | "architect" | "designer" | "builder"
+	Messages  []AIMessage `gorm:"foreignKey:ConversationID"`
+}
+
+func (t *AIConversation) BeforeCreate(*gorm.DB) error {
+	if t.ID == "" {
+		t.ID = uuid.NewString()
+	}
+	return nil
+}
+
+// AIMessage is one turn in a conversation.
+type AIMessage struct {
+	gorm.Model
+	ID             string `gorm:"primaryKey"`
+	ConversationID string `gorm:"index"`
+	Role           string // "user" | "assistant" | "system"
+	Content        string
+	TokensUsed     int64
+	ProviderName   string // which provider generated this response
+}
+
+func (t *AIMessage) BeforeCreate(*gorm.DB) error {
+	if t.ID == "" {
+		t.ID = uuid.NewString()
+	}
+	return nil
+}
+
+// ProjectBrief stores the approved sprint planning output for a project.
+type ProjectBrief struct {
+	gorm.Model
+	ID        string `gorm:"primaryKey"`
+	ProjectID string `gorm:"index"`
+	BriefJSON string // JSON serialized ProjectBriefData
+	Version   int
+}
+
+func (t *ProjectBrief) BeforeCreate(*gorm.DB) error {
+	if t.ID == "" {
+		t.ID = uuid.NewString()
+	}
+	return nil
+}
+
+// SwarmSession tracks a multi-agent execution run.
+type SwarmSession struct {
+	gorm.Model
+	ID        string `gorm:"primaryKey"`
+	ProjectID string `gorm:"index"`
+	BriefID   string
+	Status    string // "idle" | "planning" | "reviewing" | "executing" | "done" | "cancelled"
+	PlanJSON  string // current execution plan
+}
+
+func (t *SwarmSession) BeforeCreate(*gorm.DB) error {
+	if t.ID == "" {
+		t.ID = uuid.NewString()
+	}
+	return nil
+}
+
+// MarketplaceInstall records that a registry entry has been installed into a project
+// (copy / npm / patch). Used to power "Installed" views and avoid duplicate installs.
+type MarketplaceInstall struct {
+	gorm.Model
+	ID           string `gorm:"primaryKey"`
+	ProjectID    string `gorm:"index"`
+	EntryID      string `gorm:"index"`
+	Name         string
+	Type         string // "template" | "component" | "plugin" | "icon_pack"
+	InstalledRef string // component id / page route / package name
+}
+
+func (t *MarketplaceInstall) BeforeCreate(*gorm.DB) error {
+	if t.ID == "" {
+		t.ID = uuid.NewString()
+	}
+	return nil
+}
+
 type File struct {
 	gorm.Model
 	ProjectID uint

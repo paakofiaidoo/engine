@@ -6,6 +6,8 @@ import (
 	"juki-engine/pkg/data/models"
 	"juki-engine/pkg/data/repositories"
 	"juki-engine/pkg/scripts"
+	"juki-engine/pkg/services/ai"
+	"juki-engine/pkg/services/marketplace"
 	"juki-engine/pkg/watcher"
 
 	"github.com/fsnotify/fsnotify"
@@ -39,6 +41,10 @@ type Service interface {
 	// Swarm Service
 	RunSwarm(projectID, prompt string) (<-chan dtos2.SwarmEvent, error)
 
+	// Marketplace Service
+	InstallMarketplaceEntry(projectID string, entry *marketplace.Entry) (string, error)
+	ListInstalledMarketplaceEntries(projectID string) ([]*models.MarketplaceInstall, error)
+
 	// File Watcher Service
 	SubscribeToFileEvents(projectID string) (<-chan fsnotify.Event, error)
 }
@@ -48,17 +54,19 @@ type service struct {
 	scripts    scripts.Scripts
 	bridge     *bridge.Bridge
 	watcher    *watcher.Watcher
+	aiService  *ai.Service
 }
 
 /* ============================================
 *			Service Constructors
 * ============================================*/
 
-func NewService(repository repositories.Repository, script scripts.Scripts, bridge *bridge.Bridge, watcher *watcher.Watcher) Service {
+func NewService(repository repositories.Repository, script scripts.Scripts, bridge *bridge.Bridge, watcher *watcher.Watcher, aiService *ai.Service) Service {
 	return &service{
 		repository: repository,
 		scripts:    script,
 		bridge:     bridge,
 		watcher:    watcher,
+		aiService:  aiService,
 	}
 }

@@ -1,0 +1,62 @@
+version: 2
+
+project_name: juki-engine
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: juki-engine
+    main: ./cmd/main.go
+    binary: juki-engine
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w
+      - -X main.Version={{.Version}}
+      - -X main.Commit={{.Commit}}
+      - -X main.Date={{.Date}}
+
+archives:
+  - id: default
+    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+    format: tar.gz
+    format_overrides:
+      - goos: windows
+        format: zip
+    files:
+      - LICENSE
+      - README.md
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+
+release:
+  github:
+    owner: juki-builder
+    name: juki-engine
+  draft: false
+  prerelease: auto
+
+# npm package publishing via goreleaser's extra files
+# Each platform package gets the binary dropped into it post-release
+# via the GitHub Actions workflow that calls `npm publish`

@@ -43,6 +43,14 @@ func New() Connection {
 			&models.ActivityLog{},
 			&models.TerminalActivity{},
 			&models.Content{},
+			&models.UserComponent{},
+			&models.ConsoleLog{},
+			&models.AIProvider{},
+			&models.AIConversation{},
+			&models.AIMessage{},
+			&models.ProjectBrief{},
+			&models.SwarmSession{},
+			&models.MarketplaceInstall{},
 		},
 	}
 }

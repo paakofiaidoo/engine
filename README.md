@@ -30,7 +30,7 @@ To run the engine independently:
     ```bash
     go run cmd/main.go
     ```
-    The server will start on the configured port (defaulting to 8080 or as specified in `.env`).
+    The server will start on the configured port (default: `:4220`).
 
 ## API
 

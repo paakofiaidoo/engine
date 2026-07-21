@@ -1,61 +1,91 @@
 package services
 
 import (
+	"context"
 	"fmt"
+
 	"juki-engine/pkg/data/dtos"
-	"time"
+	"juki-engine/pkg/services/swarm"
 )
 
+// RunSwarm runs the real multi-agent pipeline (PM → Architect → Designer → Builder)
+// against the project's most recently approved brief, converting the internal
+// swarm.Event stream into the existing dtos.SwarmEvent shape so the gRPC layer
+// (pkg/servers/engine.go RunSwarm handler) and UI streaming code keep working
+// without any changes.
+//
+// "status" events (idle/planning/reviewing/executing/done/cancelled) are folded
+// into SwarmEventLog entries (StepID: "status") since the existing DTO has no
+// dedicated status event type — the UI already renders log lines.
 func (s *service) RunSwarm(projectID, prompt string) (<-chan dtos.SwarmEvent, error) {
-	events := make(chan dtos.SwarmEvent)
+	brief, briefErr := s.repository.GetLatestBrief(projectID)
+	if briefErr != nil || brief == nil {
+		return nil, fmt.Errorf("no approved project brief found for project %s — run Sprint Planning first", projectID)
+	}
+
+	executor := swarm.NewExecutor(s.repository, s.aiService)
+
+	internalEvents, err := executor.Run(context.Background(), projectID, brief.ID, brief.BriefJSON)
+	if err != nil {
+		return nil, err
+	}
+
+	events := make(chan dtos.SwarmEvent, 64)
 
 	go func() {
 		defer close(events)
 
-		// 1. Simulate Planning
-		time.Sleep(1 * time.Second)
-		plan := &dtos.SwarmPlan{
-			Steps: []dtos.SwarmStep{
-				{ID: "step-1", Description: "Analyze Requirements", Status: "pending"},
-				{ID: "step-2", Description: "Generate Component", Status: "pending"},
-				{ID: "step-3", Description: "Update Project", Status: "pending"},
-			},
-		}
-		events <- dtos.SwarmEvent{Type: dtos.SwarmEventPlan, Plan: plan}
+		for ev := range internalEvents {
+			switch ev.Type {
+			case "status":
+				events <- dtos.SwarmEvent{
+					Type: dtos.SwarmEventLog,
+					Log:  &dtos.SwarmLog{StepID: "status", Message: fmt.Sprintf("Swarm status: %s", ev.Status), Level: "info"},
+				}
 
-		// 2. Simulate Execution
-		steps := []string{"step-1", "step-2", "step-3"}
-		for _, stepID := range steps {
-			// Start Step
-			events <- dtos.SwarmEvent{
-				Type: dtos.SwarmEventLog,
-				Log:  &dtos.SwarmLog{StepID: stepID, Message: fmt.Sprintf("Starting %s...", stepID), Level: "info"},
+			case "plan":
+				events <- dtos.SwarmEvent{Type: dtos.SwarmEventPlan, Plan: convertPlan(ev.Plan)}
+
+			case "log":
+				if ev.Log != nil {
+					events <- dtos.SwarmEvent{
+						Type: dtos.SwarmEventLog,
+						Log:  &dtos.SwarmLog{StepID: ev.Log.Agent, Message: ev.Log.Message, Level: ev.Log.Level},
+					}
+				}
+
+			case "result":
+				if ev.Result != nil {
+					events <- dtos.SwarmEvent{
+						Type: dtos.SwarmEventResult,
+						Result: &dtos.SwarmResult{
+							Success: ev.Result.Success,
+							Message: ev.Result.Summary,
+						},
+					}
+				}
 			}
-			time.Sleep(1 * time.Second)
-
-			// Log progress
-			events <- dtos.SwarmEvent{
-				Type: dtos.SwarmEventLog,
-				Log:  &dtos.SwarmLog{StepID: stepID, Message: "Working on it...", Level: "info"},
-			}
-			time.Sleep(1 * time.Second)
-
-			// Complete Step
-			events <- dtos.SwarmEvent{
-				Type: dtos.SwarmEventLog,
-				Log:  &dtos.SwarmLog{StepID: stepID, Message: "Done.", Level: "info"},
-			}
-		}
-
-		// 3. Result
-		events <- dtos.SwarmEvent{
-			Type: dtos.SwarmEventResult,
-			Result: &dtos.SwarmResult{
-				Success: true,
-				Message: "Swarm execution completed successfully.",
-			},
 		}
 	}()
 
 	return events, nil
+}
+
+// convertPlan maps the real swarm Plan (PM/Architect/Designer/Tasks) into the
+// existing dtos.SwarmPlan{Steps} shape expected by the gRPC layer and UI.
+func convertPlan(plan *swarm.Plan) *dtos.SwarmPlan {
+	if plan == nil {
+		return &dtos.SwarmPlan{}
+	}
+
+	var steps []dtos.SwarmStep
+	for i, task := range plan.Tasks {
+		steps = append(steps, dtos.SwarmStep{
+			ID:          fmt.Sprintf("task-%d", i+1),
+			Description: fmt.Sprintf("[%s] %s — %s", task.Kind, task.Name, task.Outline),
+			Status:      "pending",
+		})
+	}
+
+	return &dtos.SwarmPlan{Steps: steps}
 }

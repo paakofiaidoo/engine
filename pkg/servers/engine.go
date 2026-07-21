@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"fmt"
+	"strings"
 	dtos2 "juki-engine/pkg/data/dtos"
 
 	enginev1 "juki-engine/pkg/gen/juki/engine/v1"
@@ -248,14 +249,57 @@ func (s *EngineServer) CreatePage(
 	ctx context.Context,
 	req *connect.Request[enginev1.CreatePageRequest],
 ) (*connect.Response[enginev1.CreatePageResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, fmt.Errorf("not implemented"))
+	fmt.Printf("[API] CreatePage Request Received: Name=%s, ProjectID=%s\n", req.Msg.Name, req.Msg.ProjectId)
+
+	// Derive route from name: "About Us" → "/about-us", "Home" → "/"
+	slug := strings.ToLower(strings.ReplaceAll(strings.TrimSpace(req.Msg.Name), " ", "-"))
+	route := "/" + slug
+	if slug == "home" || slug == "index" || slug == "" {
+		route = "/"
+	}
+
+	page, err := s.svc.CreatePage(req.Msg.ProjectId, req.Msg.Name, route)
+	if err != nil {
+		fmt.Printf("[API] CreatePage Failed: %v\n", err)
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+
+	fmt.Printf("[API] CreatePage Success: ID=%s, Route=%s\n", page.ID, page.Route)
+
+	return connect.NewResponse(&enginev1.CreatePageResponse{
+		Page: &enginev1.Page{
+			Id:        page.ID,
+			Name:      page.Name,
+			Route:     page.Route,
+			ProjectId: page.ProjectID,
+			Content:   page.Content,
+		},
+	}), nil
 }
 
 func (s *EngineServer) GetPage(
 	ctx context.Context,
 	req *connect.Request[enginev1.GetPageRequest],
 ) (*connect.Response[enginev1.GetPageResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, fmt.Errorf("not implemented"))
+	fmt.Printf("[API] GetPage Request Received: ID=%s\n", req.Msg.Id)
+
+	page, err := s.svc.GetPage(req.Msg.Id)
+	if err != nil {
+		fmt.Printf("[API] GetPage Failed: %v\n", err)
+		return nil, connect.NewError(connect.CodeNotFound, err)
+	}
+
+	return connect.NewResponse(&enginev1.GetPageResponse{
+		Page: &enginev1.Page{
+			Id:              page.ID,
+			Name:            page.Name,
+			Route:           page.Route,
+			ProjectId:       page.ProjectID,
+			Content:         page.Content,
+			ComposedContent: page.ComposedContent,
+			RawContent:      page.RawContent,
+		},
+	}), nil
 }
 
 func (s *EngineServer) SavePage(

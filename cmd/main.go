@@ -14,6 +14,9 @@ import (
 	"juki-engine/pkg/scripts"
 	api "juki-engine/pkg/servers"
 	"juki-engine/pkg/services"
+	"juki-engine/pkg/services/ai"
+	"juki-engine/pkg/services/marketplace"
+	"juki-engine/pkg/services/sprint"
 	"juki-engine/pkg/system"
 	"juki-engine/pkg/watcher"
 
@@ -91,7 +94,11 @@ func main() {
 		defer watcher.Close()
 	}
 
-	service := services.NewService(repository, script, bridge, watcher)
+	// AI Service (multi-provider, engine-owned AI communication) — constructed
+	// early so it can be injected into the main service for the real Swarm pipeline.
+	aiService := ai.NewService(repository)
+
+	service := services.NewService(repository, script, bridge, watcher, aiService)
 
 	/* ============================================
 	*			Controllers
@@ -123,6 +130,38 @@ func main() {
 	activityServer := api.NewActivityServer()
 	activityPath, activityHandler := enginev1connect.NewActivityServiceHandler(activityServer)
 	app.Any(activityPath+"*", echo.WrapHandler(activityHandler))
+
+	// Component Service
+	componentServer := api.NewComponentServer(repository)
+	componentPath, componentHandler := enginev1connect.NewComponentServiceHandler(componentServer, interceptorOpt)
+	app.Any(componentPath+"*", echo.WrapHandler(componentHandler))
+
+	// AI Service (multi-provider, engine-owned AI communication)
+	aiServer := api.NewAIServer(aiService, repository)
+	aiPath, aiHandler := enginev1connect.NewAIServiceHandler(aiServer, interceptorOpt)
+	app.Any(aiPath+"*", echo.WrapHandler(aiHandler))
+
+	// Sprint Planning Service (AI-guided project kickoff)
+	sprintService := sprint.NewService(repository, aiService)
+	sprintServer := api.NewSprintServer(sprintService)
+	sprintPath, sprintHandler := enginev1connect.NewSprintPlanningServiceHandler(sprintServer, interceptorOpt)
+	app.Any(sprintPath+"*", echo.WrapHandler(sprintHandler))
+
+	// Marketplace Service (GitHub-as-DB registry: templates, components, plugins, icon packs)
+	marketplaceRegistry := marketplace.NewService()
+	marketplaceServer := api.NewMarketplaceServer(marketplaceRegistry, service)
+	marketplacePath, marketplaceHandler := enginev1connect.NewMarketplaceServiceHandler(marketplaceServer, interceptorOpt)
+	app.Any(marketplacePath+"*", echo.WrapHandler(marketplaceHandler))
+
+	// Console Service (log streaming + persistence)
+	consoleServer := api.NewConsoleServer(repository)
+	consolePath, consoleHandler := enginev1connect.NewConsoleServiceHandler(consoleServer, interceptorOpt)
+	app.Any(consolePath+"*", echo.WrapHandler(consoleHandler))
+
+	// Health check endpoint (used by engine-manager.ts to detect running state)
+	app.GET("/health", func(c echo.Context) error {
+		return c.JSON(http.StatusOK, map[string]string{"status": "ok", "version": "0.1.0"})
+	})
 
 	cli := humacli.New(func(hooks humacli.Hooks, options *Options) {
 
